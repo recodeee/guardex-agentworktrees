@@ -84,6 +84,8 @@ test('preflight strips Guardex runtime and bypass variables from verification co
     'GUARDEX_FINISH_ACTIVE_CWD',
     'GUARDEX_FINISH_CHECKLIST',
     'GUARDEX_FINISH_GATE_DONE',
+    'GUARDEX_FINISH_REVIEWED_HEAD',
+    'GUARDEX_FINISH_REVIEWED_BASE',
     'GUARDEX_FINISH_REQUIRE_PREFLIGHT',
     'GUARDEX_FINISH_EVENT_FILE',
     'GUARDEX_FINISH_RUN_ID',
@@ -95,6 +97,16 @@ test('preflight strips Guardex runtime and bypass variables from verification co
   try {
     const leakedEnv = Object.fromEntries(keys.map((key) => [key, '1']));
     const { status, out } = runPreflight(dir, leakedEnv);
+    assert.equal(status, 0, out);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('preflight consumes its target worktree without leaking it into nested verification', () => {
+  const dir = makeNodeRepo('node -e "if(process.env.GUARDEX_PREFLIGHT_TARGET_WORKTREE)process.exit(1)"');
+  try {
+    const { status, out } = runPreflight(dir, { GUARDEX_PREFLIGHT_TARGET_WORKTREE: dir });
     assert.equal(status, 0, out);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

@@ -132,6 +132,19 @@ test('branch finish forwards the exact reviewed revision to the shell', () => {
   assert.equal(calls.script[0].options.env.GUARDEX_FINISH_REVIEWED_BASE, 'base');
 });
 
+test('bare --gate-review selects PR mode, and direct/local modes fail before review', () => {
+  const { branch, calls } = loadBranchWithStubs();
+  branch(['finish', '--gate-review']);
+  assert.deepEqual(calls.script[0].args, ['--via-pr']);
+  for (const flags of [['--no-push'], ['--direct-only'], ['--mode', 'auto'], ['--mode=direct']]) {
+    const isolated = loadBranchWithStubs();
+    assert.throws(() => isolated.branch(['finish', '--gate-review', ...flags]), /push-enabled PR/);
+    assert.equal(isolated.calls.gate.length, 0);
+    assert.equal(isolated.calls.autoCommit.length, 0);
+    assert.equal(isolated.calls.script.length, 0);
+  }
+});
+
 test('branch finish --gate-review fails closed: a throwing gate blocks the merge', () => {
   const { branch, calls } = loadBranchWithStubs({ gateThrows: true });
 

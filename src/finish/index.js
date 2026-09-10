@@ -381,6 +381,9 @@ function shouldSweepOrphans(options, failed) {
 function finish(rawArgs, defaults = {}) {
   const activeCwd = process.cwd();
   const options = parseFinishArgs(rawArgs, defaults);
+  if (options.gateReview && options.mergeMode !== 'pr') {
+    throw new Error('--gate-review requires a PR finish; direct/local modes are incompatible.');
+  }
   const repoRoot = resolveRepoRoot(options.target);
 
   const worktreeEntries = listAgentWorktrees(repoRoot);

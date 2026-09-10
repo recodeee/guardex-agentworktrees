@@ -49,7 +49,7 @@ test('gated finish never synchronizes a reviewed source, including OpenSpec conf
     assert.ok(start >= 0, 'finish needs a reviewed-revision guard');
     const end = script.indexOf('\nshould_create_integration_helper=1', start);
     const command = script.slice(start, end);
-    const run = (expectedHead, expectedBase) =>
+    const run = (expectedHead, expectedBase, extraEnv = {}) =>
       cp.spawnSync('bash', ['-eu', '-c', command], {
         encoding: 'utf8',
         env: {
@@ -60,17 +60,21 @@ test('gated finish never synchronizes a reviewed source, including OpenSpec conf
           BASE_BRANCH: 'main',
           FINISH_GATE_DONE: '1',
           MERGE_MODE: 'pr',
+          PUSH_ENABLED: '1',
           GUARDEX_FINISH_REVIEWED_HEAD: expectedHead,
           GUARDEX_FINISH_REVIEWED_BASE: expectedBase,
           GIT_CONFIG_COUNT: '1',
           GIT_CONFIG_KEY_0: 'core.hooksPath',
-          GIT_CONFIG_VALUE_0: '/dev/null'
+          GIT_CONFIG_VALUE_0: '/dev/null',
+          ...extraEnv
         }
       });
     const ok = run(head, base);
     assert.equal(ok.status, 0, ok.stderr);
     assert.equal(git('rev-parse', 'HEAD'), head, 'no rebase or reconciliation commit');
     assert.equal(git('status', '--porcelain'), '', 'no merge probe left behind');
+    assert.notEqual(run(head, base, { PUSH_ENABLED: '0' }).status, 0);
+    assert.notEqual(run(head, base, { MERGE_MODE: 'direct' }).status, 0);
     for (const [h, b] of [
       [head, head],
       [base, base],

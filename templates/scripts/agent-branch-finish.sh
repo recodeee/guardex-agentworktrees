@@ -1093,7 +1093,7 @@ assert_reviewed_revision() {
   status="$(git -C "$source_worktree" status --porcelain)" || return 1
   base="$(git -C "$repo_root" ls-remote --exit-code origin "refs/heads/$BASE_BRANCH")" || return 1
   base="${base%%[[:space:]]*}"
-  if [[ "$MERGE_MODE" != "pr" || "$branch" != "$SOURCE_BRANCH" || -z "${GUARDEX_FINISH_REVIEWED_HEAD:-}" || -z "${GUARDEX_FINISH_REVIEWED_BASE:-}" \
+  if [[ "$MERGE_MODE" != "pr" || "$PUSH_ENABLED" -ne 1 || "$branch" != "$SOURCE_BRANCH" || -z "${GUARDEX_FINISH_REVIEWED_HEAD:-}" || -z "${GUARDEX_FINISH_REVIEWED_BASE:-}" \
     || "$head" != "$GUARDEX_FINISH_REVIEWED_HEAD" || "$base" != "$GUARDEX_FINISH_REVIEWED_BASE" ]]; then
     echo "[agent-branch-finish] Reviewed revision changed or missing. Rerun the review gate; refusing synchronization, push, and merge." >&2
     return 1

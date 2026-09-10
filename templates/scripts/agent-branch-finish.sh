@@ -1104,6 +1104,20 @@ assert_reviewed_revision() {
   fi
 }
 
+assert_synchronous_merge() {
+  [[ "$FINISH_GATE_DONE" -eq 1 ]] || return 0
+  local id queue_enabled
+  id="$("$GH_BIN" pr view "$SOURCE_BRANCH" --json id --jq .id)" || return 1
+  queue_enabled="$("$GH_BIN" api graphql \
+    -f query='query($id:ID!){node(id:$id){... on PullRequest{isMergeQueueEnabled}}}' \
+    -f id="$id" --jq '.data.node.isMergeQueueEnabled')" || return 1
+  if [[ "$queue_enabled" != "false" ]]; then
+    echo "[agent-branch-finish] Review gate cannot authorize a queued merge (or unknown queue policy). Refusing to enqueue." >&2
+    return 1
+  fi
+  assert_reviewed_revision
+}
+
 merge_head_args=()
 if [[ "$FINISH_GATE_DONE" -eq 1 ]]; then
   assert_reviewed_revision || exit 1
@@ -1648,7 +1662,7 @@ wait_for_pr_merge() {
   local merge_output=""
 
   while true; do
-    assert_reviewed_revision || return 1
+    assert_synchronous_merge || return 1
     if merge_output="$("$GH_BIN" pr merge "$SOURCE_BRANCH" --squash --delete-branch "${merge_head_args[@]}" 2>&1)"; then
       return 0
     fi
@@ -1833,7 +1847,7 @@ run_pr_flow() {
 
   finish_progress running merge "waiting for GitHub merge readiness"
   merge_output=""
-  assert_reviewed_revision || return 1
+  assert_synchronous_merge || return 1
   if merge_output="$("$GH_BIN" pr merge "$SOURCE_BRANCH" --squash --delete-branch "${merge_head_args[@]}" 2>&1)"; then
     return 0
   fi

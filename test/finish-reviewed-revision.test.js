@@ -103,3 +103,45 @@ test('every gated merge attempt uses the reviewed head, never asynchronous auto-
   assert.match(script, /assert_reviewed_revision \|\| return 1/);
   assert.match(script, /FINISH_GATE_DONE.*-eq 1[\s\S]*Review gate.*rerun/i);
 });
+
+test('gated merge rejects enabled, unknown, and unavailable merge queues', () => {
+  const start = script.indexOf('assert_synchronous_merge() {');
+  const end = script.indexOf('\nmerge_head_args=()', start);
+  const guard = script.slice(start, end);
+  for (const policy of ['false', 'true', 'null', '', 'error']) {
+    const result = cp.spawnSync(
+      'bash',
+      [
+        '-eu',
+        '-c',
+        [
+          guard,
+          'assert_reviewed_revision() { echo revision-checked; }',
+          'gh_stub() { if [[ "$1" == pr ]]; then echo PR_id; elif [[ "$QUEUE" == error ]]; then return 1; else printf "%s\\n" "$QUEUE"; fi; }',
+          'assert_synchronous_merge'
+        ].join('\n')
+      ],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          FINISH_GATE_DONE: '1',
+          SOURCE_BRANCH: 'agent/test',
+          GH_BIN: 'gh_stub',
+          QUEUE: policy
+        }
+      }
+    );
+    assert.equal(result.status === 0, policy === 'false', policy);
+    if (policy === 'false') assert.match(result.stdout, /revision-checked/);
+    else assert.doesNotMatch(result.stdout, /revision-checked/);
+  }
+});
+
+test('unattended doctor finish preserves the billing-waiver preflight requirement', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/doctor/index.js'), 'utf8');
+  assert.match(
+    source,
+    /GUARDEX_FINISH_REQUIRE_PREFLIGHT: gateOutcome\.gateResult\?\.billingChecksWaived\?\.length > 0 \? '1' : '0'/
+  );
+});

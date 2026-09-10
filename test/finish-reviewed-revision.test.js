@@ -96,6 +96,65 @@ test('gated finish never synchronizes a reviewed source, including OpenSpec conf
   }
 });
 
+test('gated push publishes the reviewed object even if the local branch advances after the guard', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gx-reviewed-push-'));
+  const source = path.join(root, 'source');
+  const remote = path.join(root, 'remote.git');
+  const env = {
+    ...process.env,
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'core.hooksPath',
+    GIT_CONFIG_VALUE_0: '/dev/null'
+  };
+  const git = (...args) =>
+    cp
+      .execFileSync('git', args, { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'] })
+      .trim();
+  try {
+    git('init', '-q', '--bare', remote);
+    git('init', '-q', '-b', 'agent/test', source);
+    git('-C', source, 'config', 'user.name', 'Test');
+    git('-C', source, 'config', 'user.email', 'test@example.test');
+    git('-C', source, 'commit', '-qm', 'reviewed', '--allow-empty');
+    const head = git('-C', source, 'rev-parse', 'HEAD');
+    git('-C', source, 'remote', 'add', 'origin', remote);
+    const start = script.indexOf(
+      '  maybe_push_changed_submodule_branches "$start_ref" "$SOURCE_BRANCH"'
+    );
+    assert.ok(start >= 0);
+    const end = script.indexOf('\n  pr_title=', start);
+    const result = cp.spawnSync(
+      'bash',
+      [
+        '-eu',
+        '-c',
+        [
+          'maybe_push_changed_submodule_branches() { :; }',
+          // Inject concurrent local work immediately after the successful revision check.
+          'assert_reviewed_revision() { git -C "$source_worktree" commit -qm unreviewed --allow-empty; }',
+          script.slice(start, end)
+        ].join('\n')
+      ],
+      {
+        encoding: 'utf8',
+        env: {
+          ...env,
+          source_worktree: source,
+          SOURCE_BRANCH: 'agent/test',
+          start_ref: head,
+          FINISH_GATE_DONE: '1',
+          GUARDEX_FINISH_REVIEWED_HEAD: head
+        }
+      }
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.notEqual(git('-C', source, 'rev-parse', 'HEAD'), head);
+    assert.equal(git('--git-dir', remote, 'rev-parse', 'refs/heads/agent/test'), head);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('every gated merge attempt uses the reviewed head, never asynchronous auto-merge', () => {
   const attempts = script.split('\n').filter((line) => line.includes('pr merge "$SOURCE_BRANCH"'));
   assert.equal(attempts.length, 3);

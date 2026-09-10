@@ -1085,6 +1085,9 @@ if ! is_clean_worktree "$source_worktree"; then
   exit 1
 fi
 
+# The gate preserves the reviewed SOURCE commit. Base reads detect observed
+# drift, not an atomic base reservation: GitHub's PR merge API has a head CAS
+# only. Integration uses GitHub's current base and normal repository protections.
 assert_reviewed_revision() {
   [[ "$FINISH_GATE_DONE" -eq 1 ]] || return 0
   local head base branch status
@@ -1731,7 +1734,12 @@ run_pr_flow() {
 
   maybe_push_changed_submodule_branches "$start_ref" "$SOURCE_BRANCH"
   assert_reviewed_revision || return 1
-  git -C "$source_worktree" push -u origin "$SOURCE_BRANCH"
+  if [[ "$FINISH_GATE_DONE" -eq 1 ]]; then
+    # Do not resolve a mutable local branch again after the revision check.
+    git -C "$source_worktree" push origin "${GUARDEX_FINISH_REVIEWED_HEAD}:refs/heads/${SOURCE_BRANCH}" || return 1
+  else
+    git -C "$source_worktree" push -u origin "$SOURCE_BRANCH"
+  fi
 
   pr_title="$(git -C "$repo_root" log -1 --pretty=%s "$SOURCE_BRANCH" 2>/dev/null || true)"
   if [[ -z "$pr_title" ]]; then

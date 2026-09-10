@@ -21,11 +21,12 @@ test('auto-ship off: sweep does not gate (runReviewGate never called)', () => {
 
 test('auto-ship on + PR path: gate runs and branch proceeds when it passes', () => {
   let seen = null;
+  const gateResult = { reviewedHeadSha: 'head', reviewedBaseSha: 'base' };
   const out = runAutoShipGateForBranch(
     { autoShip: true, fallbackMode: '', ...BRANCH_INPUT },
-    { runReviewGate: (arg) => { seen = arg; } },
+    { runReviewGate: (arg) => { seen = arg; return gateResult; } },
   );
-  assert.deepEqual(out, { skip: false });
+  assert.deepEqual(out, { skip: false, gateResult });
   assert.equal(seen.repoRoot, '/repo');
   assert.equal(seen.branch, 'agent/claude/x');
   assert.equal(seen.baseBranch, 'main');

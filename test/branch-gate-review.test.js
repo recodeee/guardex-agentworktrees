@@ -123,6 +123,15 @@ test('branch finish requires repository preflight when GitHub billing checks wer
   assert.equal(calls.script[0].options.env.GUARDEX_FINISH_REQUIRE_PREFLIGHT, '1');
 });
 
+test('branch finish forwards the exact reviewed revision to the shell', () => {
+  const { branch, calls } = loadBranchWithStubs({
+    gateResult: { prNumber: 42, reviewedHeadSha: 'head', reviewedBaseSha: 'base' },
+  });
+  branch(['finish', '--branch', 'agent/claude/x', '--base', 'main', '--via-pr', '--gate-review']);
+  assert.equal(calls.script[0].options.env.GUARDEX_FINISH_REVIEWED_HEAD, 'head');
+  assert.equal(calls.script[0].options.env.GUARDEX_FINISH_REVIEWED_BASE, 'base');
+});
+
 test('branch finish --gate-review fails closed: a throwing gate blocks the merge', () => {
   const { branch, calls } = loadBranchWithStubs({ gateThrows: true });
 

@@ -209,6 +209,7 @@ function gateDeps(overrides = {}) {
   return {
     openPullRequest: () => ({ pr: { number: 7 } }),
     readHeadSha: () => 'head-sha',
+    readBaseSha: () => 'base-sha',
     waitForPullRequestHead: () => ({ status: 'current', pr: { headSha: 'head-sha' } }),
     runPrReview: () => ({ findings: [], posted: true }),
     markPullRequestReady: () => {},

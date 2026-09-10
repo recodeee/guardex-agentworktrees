@@ -886,13 +886,13 @@ function runAutoShipGateForBranch({ autoShip, fallbackMode, repoRoot, branch, ba
   // avoids a permanent gate-block on every branch.
   const reviewProvider = process.env.GUARDEX_AUTO_SHIP_REVIEW_PROVIDER || 'codex';
   try {
-    gate({
+    const gateResult = gate({
       repoRoot,
       branch,
       baseBranch,
       options: { reviewProvider, allowNoChecks: false },
     });
-    return { skip: false };
+    return { skip: false, gateResult };
   } catch (error) {
     return { skip: true, reason: `merge gate blocked (${error.message})` };
   }
@@ -1043,7 +1043,14 @@ function autoFinishReadyAgentBranches(repoRoot, options = {}) {
     finishArgs.push(waitForMerge ? '--wait-for-merge' : '--no-wait-for-merge');
     finishArgs.push('--cleanup');
 
-    const finishResult = runPackageAsset('branchFinish', finishArgs, { cwd: repoRoot });
+    const finishResult = runPackageAsset('branchFinish', finishArgs, {
+      cwd: repoRoot,
+      env: {
+        GUARDEX_FINISH_GATE_DONE: autoShip && fallbackMode === '' ? '1' : '0',
+        GUARDEX_FINISH_REVIEWED_HEAD: gateOutcome.gateResult?.reviewedHeadSha || '',
+        GUARDEX_FINISH_REVIEWED_BASE: gateOutcome.gateResult?.reviewedBaseSha || '',
+      },
+    });
     const combinedOutput = [finishResult.stdout || '', finishResult.stderr || ''].join('\n').trim();
 
     if (finishResult.status === 0) {

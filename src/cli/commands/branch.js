@@ -379,6 +379,8 @@ function branch(rawArgs) {
         GUARDEX_FINISH_ACTIVE_CWD: activeCwd,
         GUARDEX_FINISH_CHECKLIST: '1',
         GUARDEX_FINISH_GATE_DONE: gateReview ? '1' : '0',
+        GUARDEX_FINISH_REVIEWED_HEAD: gateResult?.reviewedHeadSha || '',
+        GUARDEX_FINISH_REVIEWED_BASE: gateResult?.reviewedBaseSha || '',
         GUARDEX_FINISH_REQUIRE_PREFLIGHT: gateResult?.billingChecksWaived?.length > 0 ? '1' : '0',
         ...progress.eventEnv,
       },

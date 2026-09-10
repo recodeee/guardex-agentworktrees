@@ -9,6 +9,7 @@ function cleanGateDeps() {
   return {
     openPullRequest: () => ({ pr: { number: 7, isDraft: true } }),
     readHeadSha: () => 'head-sha',
+    readBaseSha: () => 'base-sha',
     waitForPullRequestHead: () => ({ status: 'current', pr: { headSha: 'head-sha' } }),
     runPrReview: () => ({ findings: [], posted: true }),
     markPullRequestReady: () => ({ ok: true }),

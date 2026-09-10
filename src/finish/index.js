@@ -381,6 +381,9 @@ function shouldSweepOrphans(options, failed) {
 function finish(rawArgs, defaults = {}) {
   const activeCwd = process.cwd();
   const options = parseFinishArgs(rawArgs, defaults);
+  if (options.gateReview && options.mergeMode !== 'pr') {
+    throw new Error('--gate-review requires a PR finish; direct/local modes are incompatible.');
+  }
   const repoRoot = resolveRepoRoot(options.target);
 
   const worktreeEntries = listAgentWorktrees(repoRoot);
@@ -603,6 +606,8 @@ function finish(rawArgs, defaults = {}) {
           GUARDEX_FINISH_ACTIVE_CWD: activeCwd,
           GUARDEX_FINISH_CHECKLIST: '1',
           GUARDEX_FINISH_GATE_DONE: options.gateReview ? '1' : '0',
+          GUARDEX_FINISH_REVIEWED_HEAD: gateResult?.reviewedHeadSha || '',
+          GUARDEX_FINISH_REVIEWED_BASE: gateResult?.reviewedBaseSha || '',
           GUARDEX_FINISH_REQUIRE_PREFLIGHT: gateResult?.billingChecksWaived?.length > 0 ? '1' : '0',
           ...progress.eventEnv,
         },

@@ -182,6 +182,14 @@ function splitGateReviewFlags(args) {
     if (!scriptArgs.includes('--no-preflight')) scriptArgs.push('--no-preflight');
   }
 
+  if (gateReview) {
+    const mode = readFlagValue(scriptArgs, '--mode');
+    if (scriptArgs.includes('--direct-only') || scriptArgs.includes('--no-push') || (mode && mode !== 'pr')) {
+      throw new Error('--gate-review requires a push-enabled PR finish; direct/local modes are incompatible.');
+    }
+    if (!scriptArgs.includes('--via-pr')) scriptArgs.push('--via-pr');
+  }
+
   if (reviewProvider !== undefined) {
     reviewProvider = String(reviewProvider).trim().toLowerCase();
     // Fail closed on a typo rather than silently falling back to the default: a
@@ -379,6 +387,8 @@ function branch(rawArgs) {
         GUARDEX_FINISH_ACTIVE_CWD: activeCwd,
         GUARDEX_FINISH_CHECKLIST: '1',
         GUARDEX_FINISH_GATE_DONE: gateReview ? '1' : '0',
+        GUARDEX_FINISH_REVIEWED_HEAD: gateResult?.reviewedHeadSha || '',
+        GUARDEX_FINISH_REVIEWED_BASE: gateResult?.reviewedBaseSha || '',
         GUARDEX_FINISH_REQUIRE_PREFLIGHT: gateResult?.billingChecksWaived?.length > 0 ? '1' : '0',
         ...progress.eventEnv,
       },

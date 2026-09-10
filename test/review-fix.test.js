@@ -196,6 +196,7 @@ function gateDeps(overrides = {}) {
   return {
     openPullRequest: () => ({ pr: { number: 7 } }),
     readHeadSha: () => 'head-sha',
+    readBaseSha: () => 'base-sha',
     waitForPullRequestHead: () => ({ status: 'current', pr: { headSha: 'head-sha' } }),
     markPullRequestReady: () => {},
     waitForGreenCi: () => ({ status: 'green', pr: { mergeStateStatus: 'CLEAN' } }),
@@ -238,7 +239,7 @@ test('gate with --gate-autofix repairs, pushes, re-reviews, and then merges', ()
     repoRoot: '/tmp', worktreePath: '/tmp/wt', branch: 'agent/x/y', baseBranch: 'main', options: { gateAutofix: true },
   }, deps);
 
-  assert.deepEqual(result, { prNumber: 7 });
+  assert.deepEqual(result, { prNumber: 7, reviewedHeadSha: 'head-sha', reviewedBaseSha: 'base-sha' });
   assert.equal(calls.fixes, 1);
   assert.equal(calls.pushes, 1);
   assert.equal(calls.reviews, 2, 'the fix is re-reviewed by a fresh provider run, not self-certified');

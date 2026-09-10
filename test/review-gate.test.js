@@ -339,6 +339,7 @@ function gateDeps(over = {}) {
   return {
     openPullRequest: () => ({ pr: { number: 42 } }),
     readHeadSha: () => 'initial-sha',
+    readBaseSha: () => 'base-sha',
     waitForPullRequestHead: (_repoRoot, _branch, expectedHeadSha) => ({
       status: 'current', pr: { headSha: expectedHeadSha },
     }),
@@ -353,7 +354,32 @@ function gateDeps(over = {}) {
 const gateArgs = { repoRoot: '/r', branch: 'agent/x/y', baseBranch: 'main', options: {} };
 
 test('runReviewGate passes when review clean + CI green', () => {
-  assert.deepEqual(runReviewGate(gateArgs, gateDeps()), { prNumber: 42 });
+  assert.deepEqual(runReviewGate(gateArgs, gateDeps()), {
+    prNumber: 42, reviewedHeadSha: 'initial-sha', reviewedBaseSha: 'base-sha',
+  });
+});
+
+test('runReviewGate pins CI even when no autofix was needed', () => {
+  let expected;
+  runReviewGate(gateArgs, gateDeps({
+    waitForGreenCi: (_repo, _branch, options) => {
+      expected = options.expectHeadSha;
+      return { status: 'green', pr: { mergeStateStatus: 'CLEAN' } };
+    },
+  }));
+  assert.equal(expected, 'initial-sha');
+});
+
+test('runReviewGate refuses missing base and source/base drift during review', () => {
+  assert.throws(() => runReviewGate(gateArgs, gateDeps({
+    readBaseSha: () => '',
+  })), /cannot resolve the remote base/);
+  for (const key of ['readBaseSha', 'readHeadSha']) {
+    let reads = 0;
+    assert.throws(() => runReviewGate(gateArgs, gateDeps({
+      [key]: () => (++reads === 1 ? 'before' : 'after'),
+    })), /source or base changed/);
+  }
 });
 
 test('runReviewGate waits for the pushed PR head before its first review', () => {
@@ -403,7 +429,9 @@ test('runReviewGate resolves outdated GitGuardex threads after a clean review', 
     },
   });
 
-  assert.deepEqual(runReviewGate(gateArgs, deps), { prNumber: 42 });
+  assert.deepEqual(runReviewGate(gateArgs, deps), {
+    prNumber: 42, reviewedHeadSha: 'initial-sha', reviewedBaseSha: 'base-sha',
+  });
   assert.deepEqual(calls, [{ prNumber: 42, findings: [advisory] }]);
 });
 
@@ -419,6 +447,8 @@ test('runReviewGate reports billing-waived checks so callers can require local p
   assert.deepEqual(runReviewGate(gateArgs, deps), {
     prNumber: 42,
     billingChecksWaived: ['build', 'review'],
+    reviewedHeadSha: 'initial-sha',
+    reviewedBaseSha: 'base-sha',
   });
 });
 

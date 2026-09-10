@@ -1085,12 +1085,57 @@ if ! is_clean_worktree "$source_worktree"; then
   exit 1
 fi
 
+# The gate preserves the reviewed SOURCE commit. Base reads detect observed
+# drift, not an atomic base reservation: GitHub's PR merge API has a head CAS
+# only. Integration uses GitHub's current base and normal repository protections.
+assert_reviewed_revision() {
+  [[ "$FINISH_GATE_DONE" -eq 1 ]] || return 0
+  local head base branch status
+  head="$(git -C "$source_worktree" rev-parse HEAD)" || return 1
+  branch="$(git -C "$source_worktree" symbolic-ref --quiet --short HEAD)" || return 1
+  status="$(git -C "$source_worktree" status --porcelain)" || return 1
+  base="$(git -C "$repo_root" ls-remote --exit-code origin "refs/heads/$BASE_BRANCH")" || return 1
+  base="${base%%[[:space:]]*}"
+  if [[ "$MERGE_MODE" != "pr" || "$PUSH_ENABLED" -ne 1 || "$branch" != "$SOURCE_BRANCH" || -z "${GUARDEX_FINISH_REVIEWED_HEAD:-}" || -z "${GUARDEX_FINISH_REVIEWED_BASE:-}" \
+    || "$head" != "$GUARDEX_FINISH_REVIEWED_HEAD" || "$base" != "$GUARDEX_FINISH_REVIEWED_BASE" ]]; then
+    echo "[agent-branch-finish] Reviewed revision changed or missing. Rerun the review gate; refusing synchronization, push, and merge." >&2
+    return 1
+  fi
+  if [[ -n "$status" ]]; then
+    echo "[agent-branch-finish] Reviewed revision has uncommitted changes. Rerun the review gate." >&2
+    return 1
+  fi
+}
+
+assert_synchronous_merge() {
+  [[ "$FINISH_GATE_DONE" -eq 1 ]] || return 0
+  local id queue_enabled
+  id="$("$GH_BIN" pr view "$SOURCE_BRANCH" --json id --jq .id)" || return 1
+  queue_enabled="$("$GH_BIN" api graphql \
+    -f query='query($id:ID!){node(id:$id){... on PullRequest{isMergeQueueEnabled}}}' \
+    -f id="$id" --jq '.data.node.isMergeQueueEnabled')" || return 1
+  if [[ "$queue_enabled" != "false" ]]; then
+    echo "[agent-branch-finish] Review gate cannot authorize a queued merge (or unknown queue policy). Refusing to enqueue." >&2
+    return 1
+  fi
+  assert_reviewed_revision
+}
+
+merge_head_args=()
+if [[ "$FINISH_GATE_DONE" -eq 1 ]]; then
+  assert_reviewed_revision || exit 1
+  merge_head_args=(--match-head-commit "$GUARDEX_FINISH_REVIEWED_HEAD")
+fi
+
 start_ref="$BASE_BRANCH"
 if git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/${BASE_BRANCH}"; then
   git -C "$repo_root" fetch origin "$BASE_BRANCH" --quiet
   start_ref="origin/${BASE_BRANCH}"
 fi
 
+# A successful gate authorizes one revision, not automatic synchronization.
+# Keep BOTH rebase and the conflict-reconciliation merge probe outside that gate.
+if [[ "$FINISH_GATE_DONE" -ne 1 ]]; then
 require_before_finish_raw="$(git -C "$repo_root" config --get multiagent.sync.requireBeforeFinish || true)"
 if [[ -z "$require_before_finish_raw" ]]; then
   require_before_finish_raw="true"
@@ -1274,6 +1319,8 @@ if git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/${BASE_BRA
   else
     git -C "$source_worktree" merge --abort >/dev/null 2>&1 || true
   fi
+fi
+
 fi
 
 should_create_integration_helper=1
@@ -1618,7 +1665,8 @@ wait_for_pr_merge() {
   local merge_output=""
 
   while true; do
-    if merge_output="$("$GH_BIN" pr merge "$SOURCE_BRANCH" --squash --delete-branch 2>&1)"; then
+    assert_synchronous_merge || return 1
+    if merge_output="$("$GH_BIN" pr merge "$SOURCE_BRANCH" --squash --delete-branch "${merge_head_args[@]}" 2>&1)"; then
       return 0
     fi
     if is_local_branch_delete_error "$merge_output"; then
@@ -1685,7 +1733,13 @@ run_pr_flow() {
   fi
 
   maybe_push_changed_submodule_branches "$start_ref" "$SOURCE_BRANCH"
-  git -C "$source_worktree" push -u origin "$SOURCE_BRANCH"
+  assert_reviewed_revision || return 1
+  if [[ "$FINISH_GATE_DONE" -eq 1 ]]; then
+    # Do not resolve a mutable local branch again after the revision check.
+    git -C "$source_worktree" push origin "${GUARDEX_FINISH_REVIEWED_HEAD}:refs/heads/${SOURCE_BRANCH}" || return 1
+  else
+    git -C "$source_worktree" push -u origin "$SOURCE_BRANCH"
+  fi
 
   pr_title="$(git -C "$repo_root" log -1 --pretty=%s "$SOURCE_BRANCH" 2>/dev/null || true)"
   if [[ -z "$pr_title" ]]; then
@@ -1801,7 +1855,8 @@ run_pr_flow() {
 
   finish_progress running merge "waiting for GitHub merge readiness"
   merge_output=""
-  if merge_output="$("$GH_BIN" pr merge "$SOURCE_BRANCH" --squash --delete-branch 2>&1)"; then
+  assert_synchronous_merge || return 1
+  if merge_output="$("$GH_BIN" pr merge "$SOURCE_BRANCH" --squash --delete-branch "${merge_head_args[@]}" 2>&1)"; then
     return 0
   fi
   if is_local_branch_delete_error "$merge_output"; then
@@ -1814,8 +1869,12 @@ run_pr_flow() {
     return $?
   fi
 
+  if [[ "$FINISH_GATE_DONE" -eq 1 ]]; then
+    echo "[agent-branch-finish] Review gate cannot authorize a future auto-merge; rerun finish when ready." >&2
+    return 1
+  fi
   auto_output=""
-  if auto_output="$("$GH_BIN" pr merge "$SOURCE_BRANCH" --squash --delete-branch --auto 2>&1)"; then
+  if auto_output="$("$GH_BIN" pr merge "$SOURCE_BRANCH" --squash --delete-branch --auto "${merge_head_args[@]}" 2>&1)"; then
     echo "[agent-branch-finish] PR auto-merge enabled; waiting for required checks/reviews." >&2
     return 2
   fi

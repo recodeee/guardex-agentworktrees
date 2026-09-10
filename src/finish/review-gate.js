@@ -73,6 +73,13 @@ function readHeadSha(cwd) {
   return result.status === 0 ? String(result.stdout || '').trim() : '';
 }
 
+function readBaseSha(cwd, baseBranch) {
+  const result = run('git', ['-C', cwd, 'ls-remote', '--exit-code', 'origin', `refs/heads/${baseBranch}`], {
+    cwd, allowFailure: true,
+  });
+  return result.status === 0 ? String(result.stdout || '').trim().split(/\s+/)[0] : '';
+}
+
 /** Worktree holding `branch`, or `repoRoot` when git cannot tell us. */
 function resolveWorktreeForBranch(repoRoot, branch) {
   try {
@@ -306,6 +313,7 @@ function runReviewGate({
   const runFix = deps.runReviewFix || reviewFix.runReviewFix;
   const pushBranch = deps.pushBranch || pr.pushBranch;
   const headSha = deps.readHeadSha || readHeadSha;
+  const baseSha = deps.readBaseSha || readBaseSha;
   const waitHead = deps.waitForPullRequestHead || waitForPullRequestHead;
 
   const provider = options.reviewProvider || 'codex';
@@ -329,6 +337,10 @@ function runReviewGate({
   }
   const prNumber = opened.pr.number;
   const initialHeadSha = headSha(fixCwd);
+  const reviewedBaseSha = baseSha(fixCwd, baseBranch);
+  if (!reviewedBaseSha) {
+    throw new Error('review gate: cannot resolve the remote base commit. Refusing to merge.');
+  }
   const initialHeadSync = waitHead(repoRoot, branch, initialHeadSha, {
     timeoutSeconds: options.gateHeadTimeoutSeconds,
     pollSeconds: options.gateHeadPollSeconds,
@@ -379,9 +391,8 @@ function runReviewGate({
   const blockedPaths = new Set();
   const repairedPaths = new Set();
   let autofixAttempted = false;
-  // Set once an auto-fix round pushes: from then on the CI wait may only judge
-  // that commit, never the one it replaced.
-  let pushedHeadSha = '';
+  // Pin CI from the first review, and advance only after a reviewed autofix.
+  let pushedHeadSha = initialHeadSha;
   for (let round = 0; round <= maxFixRounds; round += 1) {
     reportProgress(
       progress,
@@ -612,6 +623,10 @@ function runReviewGate({
     throw new Error(`review gate: PR #${prNumber} not in a mergeable state (${ci.status}).`);
   }
 
+  if (headSha(fixCwd) !== pushedHeadSha || baseSha(fixCwd, baseBranch) !== reviewedBaseSha) {
+    throw new Error('review gate: source or base changed during review. Rerun the review gate before merging.');
+  }
+  const revision = { reviewedHeadSha: pushedHeadSha, reviewedBaseSha };
   const mss = ci.pr && ci.pr.mergeStateStatus;
   const billingChecksWaived = Array.isArray(ci.billingWaivedNames)
     ? ci.billingWaivedNames
@@ -627,11 +642,11 @@ function runReviewGate({
       `PR #${prNumber}: review clean; GitHub billing prevented [${billingChecksWaived.join(', ')}] from starting. `
       + 'Proceeding only with mandatory repository preflight.',
     );
-    return { prNumber, billingChecksWaived };
+    return { prNumber, ...revision, billingChecksWaived };
   }
   reportProgress(progress, 'complete', 'ci', `green${mss ? `, mergeStateStatus=${mss}` : ''}`);
   gateLog(`PR #${prNumber}: review clean + CI green${mss ? ` + mergeStateStatus=${mss}` : ''} — proceeding to merge`);
-  return { prNumber };
+  return { prNumber, ...revision };
 }
 
 module.exports = {

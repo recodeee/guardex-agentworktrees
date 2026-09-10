@@ -35,6 +35,7 @@ function gateDeps(overrides = {}) {
   return {
     openPullRequest: () => ({ pr: { number: 440 } }),
     readHeadSha: () => 'head-sha',
+    readBaseSha: () => 'base-sha',
     waitForPullRequestHead: () => ({ status: 'current', pr: { headSha: 'head-sha' } }),
     markPullRequestReady: () => {},
     waitForGreenCi: () => ({ status: 'green', pr: { mergeStateStatus: 'CLEAN' } }),
@@ -80,7 +81,7 @@ test('a blocking finding whose file the fix actually edited clears normally', ()
       status: 'fixed', changedFiles: ['src/components/product-card-compact.tsx'], sha: 'abc',
     }),
   });
-  assert.deepEqual(gate(deps, { gateAutofix: true }), { prNumber: 440 });
+  assert.deepEqual(gate(deps, { gateAutofix: true }), { prNumber: 440, reviewedHeadSha: 'head-sha', reviewedBaseSha: 'base-sha' });
 });
 
 test('a finding downgraded below the block threshold still counts as reviewed', () => {
@@ -94,7 +95,7 @@ test('a finding downgraded below the block threshold still counts as reviewed', 
     },
     runReviewFix: () => ({ status: 'fixed', changedFiles: ['unrelated.ts'], sha: 'abc' }),
   });
-  assert.deepEqual(gate(deps, { prNumber: 440, gateAutofix: true }), { prNumber: 440 });
+  assert.deepEqual(gate(deps, { prNumber: 440, gateAutofix: true }), { prNumber: 440, reviewedHeadSha: 'head-sha', reviewedBaseSha: 'base-sha' });
 });
 
 test('carry-forward never fires without --gate-autofix', () => {
@@ -104,7 +105,7 @@ test('carry-forward never fires without --gate-autofix', () => {
     runPrReview: () => ({ findings: [], posted: true }),
     runReviewFix: () => assert.fail('no fix without the flag'),
   });
-  assert.deepEqual(gate(deps, {}), { prNumber: 440 });
+  assert.deepEqual(gate(deps, {}), { prNumber: 440, reviewedHeadSha: 'head-sha', reviewedBaseSha: 'base-sha' });
 });
 
 test('a clean first review merges even with autofix armed', () => {
@@ -112,7 +113,7 @@ test('a clean first review merges even with autofix armed', () => {
     runPrReview: () => ({ findings: [{ path: 'a.tsx', line: 1, severity: 'low', message: 'nit' }], posted: true }),
     runReviewFix: () => assert.fail('nothing blocking, nothing to fix'),
   });
-  assert.deepEqual(gate(deps, { gateAutofix: true }), { prNumber: 440 });
+  assert.deepEqual(gate(deps, { gateAutofix: true }), { prNumber: 440, reviewedHeadSha: 'head-sha', reviewedBaseSha: 'base-sha' });
 });
 
 test('an aborted fix still blocks on the original finding, not the carry-forward path', () => {

@@ -1,5 +1,17 @@
 # Changelog
 
+## [8.5.0](https://github.com/opencue/gitguardex/compare/v8.4.0...v8.5.0) (2026-09-10)
+
+
+### Features
+
+* **toolchain:** wire CodeGraph and OpenSrc by default ([#762](https://github.com/opencue/gitguardex/issues/762)) ([9125fb3](https://github.com/opencue/gitguardex/commit/9125fb356c950e34459dba6501817b9ab0a7f0da))
+
+
+### Bug Fixes
+
+* preserve reviewed revision through gated finish ([#772](https://github.com/opencue/gitguardex/issues/772)) ([46d5af9](https://github.com/opencue/gitguardex/commit/46d5af9f826725790ee9a78ffb0e5abef4a77344))
+
 ## [8.4.0](https://github.com/opencue/gitguardex/compare/v8.3.0...v8.4.0) (2026-09-01)
 
 
